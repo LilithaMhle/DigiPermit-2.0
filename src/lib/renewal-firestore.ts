@@ -7,6 +7,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  arrayUnion,
   setDoc,
   updateDoc,
   where,
@@ -34,6 +35,7 @@ export interface RenewalRequest {
   comments?: string;
   adminComment?: string;
   attachments?: RenewalAttachment[];
+  responses?: { from: string; message: string; at: any }[];
 }
 
 const COLLECTION = "renewal_requests";
@@ -49,7 +51,13 @@ export async function createRenewalRequest(payload: {
 }): Promise<void> {
   const ref = collection(firebaseDb(), COLLECTION);
   await addDoc(ref, {
-    ...payload,
+    userId: payload.userId,
+    userEmail: payload.userEmail,
+    userName: payload.userName,
+    permitNumber: payload.permitNumber,
+    ...(payload.permitId !== undefined ? { permitId: payload.permitId } : {}),
+    comments: payload.comments,
+    ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
     status: "submitted",
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -76,7 +84,16 @@ export async function updateRenewalRequestStatus(requestId: string, status: Rene
   const ref = doc(firebaseDb(), COLLECTION, requestId);
   await updateDoc(ref, {
     status,
-    adminComment: adminComment ?? undefined,
+    ...(adminComment !== undefined ? { adminComment } : {}),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function addRenewalResponse(requestId: string, responderId: string, message: string): Promise<void> {
+  const ref = doc(firebaseDb(), COLLECTION, requestId);
+  await updateDoc(ref, {
+    responses: arrayUnion({ from: responderId, message, at: new Date().toISOString() }),
+    status: "under_review",
     updatedAt: serverTimestamp(),
   });
 }

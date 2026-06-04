@@ -3,8 +3,11 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { listRenewalRequests, updateRenewalRequestStatus, RenewalRequest } from "@/lib/renewal-firestore";
+import { updatePermit, getPermitByNumber } from "@/lib/permits-firestore";
 
 export const Route = createFileRoute("/_app/renewals")({
   head: () => ({ meta: [{ title: "Renewal Requests · Admin" }] }),
@@ -14,6 +17,12 @@ export const Route = createFileRoute("/_app/renewals")({
 function RenewalsPage() {
   const qc = useQueryClient();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<RenewalRequest | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [modalMode, setModalMode] = useState<"info" | "approve" | "reject" | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string>("");
+  const [rejectReason, setRejectReason] = useState<string>("");
+  const [approveExpiryDate, setApproveExpiryDate] = useState<string>("");
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ["admin", "renewals"],
@@ -28,6 +37,77 @@ function RenewalsPage() {
       await qc.invalidateQueries({ queryKey: ["admin", "renewals"] });
     } catch (err) {
       toast.error((err as Error).message || "Unable to update request.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const openActionModal = (request: RenewalRequest, mode: "info" | "approve" | "reject") => {
+    setSelectedRequest(request);
+    setModalMode(mode);
+    setInfoMessage("");
+    setRejectReason("");
+    setApproveExpiryDate("");
+    setShowDetailsModal(true);
+  };
+
+  const handleRequestMoreInfo = async () => {
+    if (!selectedRequest) return;
+    setBusyId(selectedRequest.id);
+    try {
+      await updateRenewalRequestStatus(selectedRequest.id, "info_required", infoMessage.trim() || undefined);
+      toast.success("Marked as requiring additional info.");
+      setShowDetailsModal(false);
+      setSelectedRequest(null);
+      setInfoMessage("");
+      await qc.invalidateQueries({ queryKey: ["admin", "renewals"] });
+    } catch (err) {
+      toast.error((err as Error).message || "Unable to update request.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!selectedRequest) return;
+    setBusyId(selectedRequest.id);
+    try {
+      await updateRenewalRequestStatus(selectedRequest.id, "rejected", rejectReason.trim() || "Request rejected by admin.");
+      toast.success("Request rejected.");
+      setShowDetailsModal(false);
+      setSelectedRequest(null);
+      setRejectReason("");
+      await qc.invalidateQueries({ queryKey: ["admin", "renewals"] });
+    } catch (err) {
+      toast.error((err as Error).message || "Unable to update request.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!selectedRequest) return;
+    if (!approveExpiryDate) return toast.error("Select a new expiry date.");
+    setBusyId(selectedRequest.id);
+    try {
+      // Try to update permit expiry
+      let permitId = selectedRequest.permitId;
+      if (!permitId) {
+        const p = await getPermitByNumber(selectedRequest.permitNumber);
+        permitId = p?.id;
+      }
+      if (permitId) {
+        await updatePermit(permitId, { expiryDate: approveExpiryDate, status: "valid" });
+      }
+      await updateRenewalRequestStatus(selectedRequest.id, "approved");
+      toast.success("Request approved and permit updated.");
+      setShowDetailsModal(false);
+      setSelectedRequest(null);
+      setApproveExpiryDate("");
+      await qc.invalidateQueries({ queryKey: ["admin", "renewals"] });
+      await qc.invalidateQueries({ queryKey: ["permits"] });
+    } catch (err) {
+      toast.error((err as Error).message || "Unable to approve request.");
     } finally {
       setBusyId(null);
     }
@@ -81,9 +161,10 @@ function RenewalsPage() {
                     <td className="px-4 py-3 capitalize">{request.status.replace("_", " ")}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex flex-wrap justify-end gap-2">
-                        <Button size="sm" variant="outline" disabled={busyId === request.id} onClick={() => void handleAction(request, "approved")}>Approve</Button>
-                        <Button size="sm" variant="secondary" disabled={busyId === request.id} onClick={() => void handleAction(request, "info_required")}>Info</Button>
-                        <Button size="sm" variant="destructive" disabled={busyId === request.id} onClick={() => void handleAction(request, "rejected")}>Reject</Button>
+                        
+                        <Button size="sm" variant="secondary" disabled={busyId === request.id} onClick={() => openActionModal(request, "info")}>Info</Button>
+                        <Button size="sm" variant="destructive" disabled={busyId === request.id} onClick={() => openActionModal(request, "reject")}>Reject</Button>
+                        <Button size="sm" variant="outline" disabled={busyId === request.id} onClick={() => openActionModal(request, "approve")}>Approve</Button>
                       </div>
                     </td>
                   </tr>
@@ -93,6 +174,103 @@ function RenewalsPage() {
           </table>
         </div>
       </Card>
+
+      <Dialog
+        open={showDetailsModal}
+        onOpenChange={(open) => {
+          setShowDetailsModal(open);
+          if (!open) {
+            setSelectedRequest(null);
+            setInfoMessage("");
+            setModalMode(null);
+            setRejectReason("");
+            setApproveExpiryDate("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Renewal Request Details</DialogTitle>
+          </DialogHeader>
+          {selectedRequest && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Permit Number</p>
+                  <p className="font-medium">{selectedRequest.permitNumber}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Status</p>
+                  <p className="font-medium capitalize">{selectedRequest.status.replace("_", " ")}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Holder Name</p>
+                  <p className="font-medium">{selectedRequest.userName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Email</p>
+                  <p className="font-medium text-sm">{selectedRequest.userEmail}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Submitted</p>
+                  <p className="font-medium">{new Date(selectedRequest.submittedAt.toDate?.() ?? selectedRequest.submittedAt).toLocaleString()}</p>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">Comments</p>
+                <p className="p-3 bg-secondary/50 rounded-md">{selectedRequest.comments || "No additional comments provided."}</p>
+              </div>
+              {selectedRequest.responses && selectedRequest.responses.length > 0 && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Holder replies</p>
+                  <div className="space-y-3">
+                    {selectedRequest.responses.map((resp: any, idx: number) => (
+                      <div key={idx} className="p-3 bg-secondary/60 rounded-md">
+                        <p className="text-xs text-muted-foreground">{resp.from === selectedRequest.userId ? "Holder" : resp.from} • {new Date(resp.at?.toDate?.() ?? resp.at).toLocaleString()}</p>
+                        <p className="mt-1">{resp.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {modalMode === "reject" && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Rejection reason</p>
+                  <Textarea value={rejectReason} onChange={(e) => setRejectReason((e.target as HTMLTextAreaElement).value)} rows={4} placeholder="Provide a reason for rejecting this request" />
+                </div>
+              )}
+
+              {modalMode === "approve" && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">New expiry date</p>
+                  <input type="date" value={approveExpiryDate} onChange={(e) => setApproveExpiryDate(e.target.value)} className="rounded-md border border-border p-2" />
+                </div>
+              )}
+              <div>
+                <label className="text-sm text-muted-foreground mb-2 block">Message to permit holder</label>
+                <Textarea
+                  value={infoMessage}
+                  onChange={(e) => setInfoMessage((e.target as HTMLTextAreaElement).value)}
+                  placeholder="Describe what information is required from the permit holder"
+                  rows={4}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowDetailsModal(false)}>Close</Button>
+            {modalMode === "info" && (
+              <Button variant="secondary" disabled={busyId === selectedRequest?.id || infoMessage.trim() === ""} onClick={() => void handleRequestMoreInfo()}>Request More Info</Button>
+            )}
+            {modalMode === "reject" && (
+              <Button variant="destructive" disabled={busyId === selectedRequest?.id || rejectReason.trim() === ""} onClick={() => void handleReject()}>Reject</Button>
+            )}
+            {modalMode === "approve" && (
+              <Button variant="outline" disabled={busyId === selectedRequest?.id || !approveExpiryDate} onClick={() => void handleApprove()}>Approve</Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

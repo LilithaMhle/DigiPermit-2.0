@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/lib/auth-store";
 import { getPermitByNumber, PermitRecord, computedStatus } from "@/lib/permits-firestore";
-import { createRenewalRequest, listUserRenewalRequests, RenewalRequest } from "@/lib/renewal-firestore";
+import { createRenewalRequest, listUserRenewalRequests, RenewalRequest, addRenewalResponse } from "@/lib/renewal-firestore";
 import { updateUserProfile } from "@/lib/users-firestore";
 import { printPermit } from "@/lib/print-permit";
 
@@ -29,6 +29,9 @@ export default function PermitHolderProfile() {
   const [attachments, setAttachments] = useState<Array<{ name: string; type: string; data: string }>>([]);
   const [submitting, setSubmitting] = useState(false);
   const [requests, setRequests] = useState<RenewalRequest[]>([]);
+  const [replyRequestId, setReplyRequestId] = useState<string | null>(null);
+  const [replyMessage, setReplyMessage] = useState("");
+  const [replying, setReplying] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
 
   const isPermitHolder = user?.role === "permit_holder";
@@ -46,6 +49,23 @@ export default function PermitHolderProfile() {
   useEffect(() => {
     void loadRequests();
   }, [user]);
+
+  const sendReply = async (requestId: string) => {
+    if (!user) return;
+    if (!replyMessage.trim()) return toast.error("Enter a message to send.");
+    setReplying(true);
+    try {
+      await addRenewalResponse(requestId, user.id, replyMessage.trim());
+      toast.success("Reply sent.");
+      setReplyRequestId(null);
+      setReplyMessage("");
+      await loadRequests();
+    } catch (err) {
+      toast.error((err as Error).message || "Unable to send reply.");
+    } finally {
+      setReplying(false);
+    }
+  };
 
   useEffect(() => {
     if (!user?.permitNumber || permit) return;
@@ -124,7 +144,7 @@ export default function PermitHolderProfile() {
         userName: user.fullName,
         permitNumber: permit.permitNumber,
         comments: requestMessage.trim(),
-        attachments: attachments.length ? attachments : undefined,
+        ...(attachments.length > 0 ? { attachments } : {}),
       });
       setRequestMessage("");
       setAttachments([]);
@@ -343,9 +363,39 @@ export default function PermitHolderProfile() {
                       <p className="font-medium">{r.permitNumber}</p>
                       <p className="text-xs text-muted-foreground">Submitted {new Date(r.submittedAt.toDate?.() ?? r.submittedAt).toLocaleDateString()}</p>
                     </div>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/80">{r.status.replace("_", " ")}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/80">{r.status.replace("_", " ")}</span>
+                      {(r.status === "info_required" || r.adminComment) && (
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setReplyRequestId((prev) => (prev === r.id ? null : r.id));
+                          setReplyMessage("");
+                        }}>{replyRequestId === r.id ? "Close" : "Reply"}</Button>
+                      )}
+                    </div>
                   </div>
                   {r.adminComment && <p className="mt-3 text-sm text-muted-foreground">Admin note: {r.adminComment}</p>}
+
+                  {r.responses && r.responses.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {r.responses.map((resp, idx) => (
+                        <div key={idx} className="text-sm">
+                          <p className="text-muted-foreground">{resp.from === user?.id ? "You" : "Admin"} • {new Date(resp.at?.toDate?.() ?? resp.at).toLocaleString()}</p>
+                          <p className="mt-1">{resp.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {replyRequestId === r.id && (
+                    <div className="mt-3">
+                      <Label className="text-sm">Your reply</Label>
+                      <Textarea rows={3} value={replyMessage} onChange={(e) => setReplyMessage(e.target.value)} placeholder="Provide the requested information..." />
+                      <div className="flex gap-2 mt-2">
+                        <Button onClick={() => void sendReply(r.id)} disabled={replying || !replyMessage.trim()}>{replying ? "Sending…" : "Send reply"}</Button>
+                        <Button variant="outline" onClick={() => { setReplyRequestId(null); setReplyMessage(""); }}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
