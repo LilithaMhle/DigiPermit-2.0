@@ -1,0 +1,158 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function ownsProfile(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function hasOnlyUserFields() {
+      return request.resource.data.keys().hasOnly([
+        'id',
+        'email',
+        'fullName',
+        'role',
+        'suspended',
+        'permitNumber',
+        'contactPhone',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function hasValidUserShape(uid) {
+      return hasOnlyUserFields()
+        && request.resource.data.id == uid
+        && request.resource.data.email is string
+        && request.resource.data.fullName is string
+        && request.resource.data.role in ['admin', 'officer', 'permit_holder']
+        && (request.resource.data.permitNumber is string || request.resource.data.permitNumber == null)
+        && (request.resource.data.contactPhone is string || request.resource.data.contactPhone == null);
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isOfficer() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'officer';
+    }
+
+    function isPermitHolder() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'permit_holder';
+    }
+
+    function isOfficerOrAdmin() {
+      return isAdmin() || isOfficer();
+    }
+
+    function isPermitNumberQuery() {
+      return request.query.where.size() == 1
+        && request.query.where[0].field == 'permitNumber'
+        && request.query.where[0].op == '=='
+        && request.query.where[0].value is string;
+    }
+
+    function isOwnRenewalRequestQuery() {
+      return request.query.where.size() == 1
+        && request.query.where[0].field == 'userId'
+        && request.query.where[0].op == '=='
+        && request.query.where[0].value == request.auth.uid;
+    }
+
+    function isOwnScanQuery() {
+      return request.query.where.size() == 1
+        && request.query.where[0].field == 'officerUid'
+        && request.query.where[0].op == '=='
+        && request.query.where[0].value == request.auth.uid;
+    }
+
+    match /users/{uid} {
+      allow read: if ownsProfile(uid) || isAdmin();
+      allow list: if isAdmin();
+
+      allow create: if ownsProfile(uid)
+        && hasValidUserShape(uid)
+        || (isAdmin() && request.resource.data.id == uid && request.resource.data.email is string && request.resource.data.fullName is string && request.resource.data.role in ['admin', 'officer', 'permit_holder']);
+
+      allow update: if (ownsProfile(uid)
+        && hasValidUserShape(uid)
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.suspended == resource.data.suspended)
+        || (isAdmin() && request.resource.data.keys().hasOnly(['role', 'email', 'fullName', 'id', 'createdAt', 'updatedAt', 'suspended', 'permitNumber', 'contactPhone']));
+
+      allow delete: if isAdmin();
+    }
+
+    match /permits/{permitId} {
+      allow get: if isAdmin()
+        || isOfficer()
+        || (isPermitHolder() && resource.data.permitNumber == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permitNumber);
+
+      allow list: if isAdmin()
+        || isOfficer()
+        || (isPermitHolder() && isPermitNumberQuery());
+
+      allow create, update, delete: if isAdmin() || isOfficer();
+    }
+
+    match /scans/{scanId} {
+      allow read: if isAdmin()
+        || (isOfficer() && resource.data.officerUid == request.auth.uid);
+      allow list: if isAdmin() || isOwnScanQuery();
+      allow create: if isOfficer()
+        && request.resource.data.officerUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /alerts/{alertId} {
+      allow read: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isOfficerOrAdmin();
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['resolved', 'resolvedBy', 'resolvedAt', 'updatedAt']);
+      allow delete: if isAdmin();
+    }
+
+    match /renewal_requests/{requestId} {
+      allow read: if isSignedIn() && (isAdmin() || ownsProfile(resource.data.userId));
+      allow list: if isSignedIn() && (isAdmin() || isOwnRenewalRequestQuery());
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userEmail is string
+        && request.resource.data.userName is string
+        && request.resource.data.permitNumber is string
+        && request.resource.data.status == 'submitted'
+        && request.resource.data.submittedAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /audit_logs/{logId} {
+      allow create: if isSignedIn()
+        && request.resource.data.actorId is string
+        && request.resource.data.action is string
+        && request.resource.data.createdAt is timestamp;
+      allow read, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
