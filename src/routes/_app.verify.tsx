@@ -88,6 +88,7 @@ function VerifyPage() {
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const lastScannedRef = useRef<string>("");
   const cooldownRef = useRef<boolean>(false);
+  const mountedRef = useRef(true);
 
   // ── Stop camera ────────────────────────────────────────────────────────────
 
@@ -96,10 +97,14 @@ function VerifyPage() {
       window.clearInterval(scanIntervalRef.current);
       scanIntervalRef.current = null;
     }
-    if (scannerControlsRef.current) {
-      scannerControlsRef.current.stop();
-      scannerControlsRef.current = null;
+    try {
+      if (scannerControlsRef.current) {
+        scannerControlsRef.current.stop();
+      }
+    } catch {
+      // already stopped or invalid state — safe to ignore
     }
+    scannerControlsRef.current = null;
     readerRef.current = null;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
@@ -110,6 +115,7 @@ function VerifyPage() {
     }
     detectorRef.current = null;
     setScannerReady(false);
+    setCameraState("idle");
   }, []);
 
   // ── Scan frame (native BarcodeDetector) ───────────────────────────────────
@@ -162,6 +168,10 @@ function VerifyPage() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
       });
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = stream;
 
       if (videoRef.current) {
@@ -185,6 +195,11 @@ function VerifyPage() {
         );
       }
 
+      if (!mountedRef.current) {
+        stopCamera();
+        return;
+      }
+
       // Also run native BarcodeDetector in parallel when available — whichever
       // decodes first wins. Cooldown in onDetected prevents duplicates.
       if (typeof window !== "undefined" && "BarcodeDetector" in window) {
@@ -202,7 +217,14 @@ function VerifyPage() {
         }
       }
 
-      setTimeout(() => setScannerReady(true), 600);
+      if (!mountedRef.current) {
+        stopCamera();
+        return;
+      }
+
+      setTimeout(() => {
+        if (mountedRef.current) setScannerReady(true);
+      }, 600);
     } catch (err) {
       const msg = (err as Error)?.message ?? "Unable to access camera.";
       setCameraError(msg);
@@ -213,8 +235,12 @@ function VerifyPage() {
   // ── Auto-start camera on mount ────────────────────────────────────────────
 
   useEffect(() => {
-    startCamera();
-    return () => stopCamera();
+    mountedRef.current = true;
+    void startCamera();
+    return () => {
+      mountedRef.current = false;
+      stopCamera();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Mutation ───────────────────────────────────────────────────────────────

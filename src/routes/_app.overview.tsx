@@ -23,8 +23,8 @@ import { useEffect, useMemo, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDistanceToNow, format, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import { listExpiringPermits, listPermits } from "@/lib/permits-firestore";
-import { listScans, type ScanEvent } from "@/lib/scans-firestore";
-import { listAlerts, type AIAlert } from "@/lib/alerts-firestore";
+import { subscribeToScans, type ScanEvent } from "@/lib/scans-firestore";
+import { subscribeToAlerts, type AIAlert } from "@/lib/alerts-firestore";
 import { listRenewalRequests } from "@/lib/renewal-firestore";
 import { toast } from "sonner";
 
@@ -46,6 +46,7 @@ function Overview() {
   const [pendingRenewals, setPendingRenewals] = useState(0);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [now, setNow] = useState(() => new Date());
 
   // Filter state
   const today = new Date().toISOString().slice(0, 10);
@@ -54,31 +55,48 @@ function Overview() {
   const [startDate, setStartDate] = useState(defaultStartDate.toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState(today);
 
-  // Load data from Firestore
+  // Load non-realtime data + subscribe to realtime feeds (scans + alerts)
   useEffect(() => {
-    const loadData = async () => {
+    let cancelled = false;
+    const loadStatic = async () => {
       try {
-        setLoading(true);
-        const [permitsData, scansData, alertsData, expiring, renewalRequests] = await Promise.all([
+        const [permitsData, expiring, renewalRequests] = await Promise.all([
           listPermits(),
-          listScans(500),
-          listAlerts(200),
           listExpiringPermits(30),
           listRenewalRequests(),
         ]);
+        if (cancelled) return;
         setPermits(permitsData);
-        setScans(scansData);
-        setAlerts(alertsData);
         setExpiringCount(expiring.length);
-        setPendingRenewals(renewalRequests.filter((r) => r.status === "submitted" || r.status === "under_review" || r.status === "info_required").length);
+        setPendingRenewals(
+          renewalRequests.filter(
+            (r) => r.status === "submitted" || r.status === "under_review" || r.status === "info_required",
+          ).length,
+        );
       } catch (err) {
         console.error("Failed to load data:", err);
         toast.error("Failed to load dashboard data");
-      } finally {
-        setLoading(false);
       }
     };
-    loadData();
+    loadStatic();
+
+    const unsubScans = subscribeToScans((s) => {
+      setScans(s);
+      setLoading(false);
+    }, 500);
+    const unsubAlerts = subscribeToAlerts((a) => setAlerts(a), 200);
+
+    return () => {
+      cancelled = true;
+      unsubScans();
+      unsubAlerts();
+    };
+  }, []);
+
+  // Live clock — refresh "now" every 30s so the today's-activity chart progresses
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
   }, []);
 
   // Filter scans by date range
@@ -106,17 +124,26 @@ function Overview() {
     };
   }, [permits, filteredScans, alerts]);
 
+  // Scan Activity — always shows TODAY hour-by-hour, up to the current hour
   const hourly = useMemo(() => {
+    const currentHour = now.getHours();
+    const todayStr = now.toDateString();
     const buckets: Record<number, { hour: string; valid: number; invalid: number }> = {};
-    for (let h = 0; h < 24; h++) buckets[h] = { hour: `${h}:00`, valid: 0, invalid: 0 };
-    filteredScans.forEach((s) => {
-      const scanDate = s.timestamp ? new Date(typeof s.timestamp === 'object' ? s.timestamp.toDate?.() : s.timestamp) : new Date();
+    for (let h = 0; h <= currentHour; h++) {
+      buckets[h] = { hour: `${String(h).padStart(2, "0")}:00`, valid: 0, invalid: 0 };
+    }
+    scans.forEach((s) => {
+      const scanDate = s.timestamp
+        ? new Date(typeof s.timestamp === "object" ? s.timestamp.toDate?.() : s.timestamp)
+        : new Date();
+      if (scanDate.toDateString() !== todayStr) return;
       const h = scanDate.getHours();
+      if (h > currentHour) return;
       if (s.result === "valid") buckets[h].valid++;
       else buckets[h].invalid++;
     });
     return Object.values(buckets);
-  }, [filteredScans]);
+  }, [scans, now]);
 
   const resultBreakdown = useMemo(() => {
     const counts: Record<string, number> = { valid: 0, expired: 0, revoked: 0, not_found: 0 };
@@ -339,8 +366,14 @@ function Overview() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-semibold">Scan Activity</h2>
-              <p className="text-sm text-muted-foreground">Valid vs. invalid verifications per hour (filtered date range)</p>
+              <p className="text-sm text-muted-foreground">
+                Today's verifications by hour · live as of {format(now, "HH:mm")}
+              </p>
             </div>
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+              Live
+            </span>
           </div>
           <div className="h-72">
             <ResponsiveContainer>
