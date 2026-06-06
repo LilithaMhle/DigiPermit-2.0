@@ -79,7 +79,7 @@ export const setUserRole = createServerFn({ method: "POST" })
     // await ensureAdmin();
 
     const { userId, role } = data;
-    const { error } = await supabaseAdmin.from("user_roles").upsert({ user_id: userId, role }, { onConflict: ["user_id"] });
+    const { error } = await supabaseAdmin.from("user_roles").upsert({ user_id: userId, role }, { onConflict: "user_id" });
     if (error) throw error;
     return { ok: true };
   });

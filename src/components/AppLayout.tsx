@@ -1,10 +1,20 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { subscribeToAlerts } from "@/lib/alerts-firestore";
 import { Shield, LayoutDashboard, FileCheck2, ScanLine, FilePlus2, AlertTriangle, ListChecks, LogOut, PanelLeftClose, PanelLeftOpen, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore, useCurrentUser } from "@/lib/auth-store";
 import { useNavigate } from "@tanstack/react-router";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const nav = [
   { to: "/overview", label: "Overview", icon: LayoutDashboard, roles: ["admin"] },
@@ -20,12 +30,19 @@ const nav = [
 
 export function AppLayout() {
   const [alerts, setAlerts] = useState(0);
+  const [signOutOpen, setSignOutOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("spvms.sidebar.collapsed") === "1";
   });
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const user = useCurrentUser();
+  const liveUser = useCurrentUser();
+  // Keep the last-known user so the sidebar nav stays visible during transient
+  // auth-store updates (route navigation, token refresh, etc.). Without this,
+  // a momentary null user would blank out the nav and avatar.
+  const lastUserRef = useRef(liveUser);
+  if (liveUser) lastUserRef.current = liveUser;
+  const user = liveUser ?? lastUserRef.current;
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
@@ -131,7 +148,7 @@ export function AppLayout() {
               )}
               <button
                 onClick={() => {
-                  void logout().then(() => navigate({ to: "/auth" }));
+                  setSignOutOpen(true);
                 }}
                 title="Sign out"
                 className="size-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
@@ -152,6 +169,27 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will be returned to the sign-in screen and need to log in again to continue.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setSignOutOpen(false);
+                void logout().then(() => navigate({ to: "/auth" }));
+              }}
+            >
+              Sign out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

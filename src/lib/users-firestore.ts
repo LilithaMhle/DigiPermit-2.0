@@ -55,7 +55,7 @@ export async function createUserInBackground(input: {
   }
 }
 
-export async function createUsersFromCsv(fileContents: string, createdBy?: { id: string; email?: string }): Promise<{ ok: true; created: number; errors: string[] }> {
+export async function createUsersFromCsv(fileContents: string, createdBy?: { id: string; email?: string }): Promise<{ ok: boolean; created: number; errors: string[] }> {
   const lines = fileContents
     .split(/\r?\n/)
     .map((line) => line.trim())
