@@ -55,7 +55,7 @@ import {
 import { printPermit } from "@/lib/print-permit";
 
 export const Route = createFileRoute("/_app/permits")({
-  head: () => ({ meta: [{ title: "Permits · SPVMS" }] }),
+  head: () => ({ meta: [{ title: "Permits · DigiPermit" }] }),
   component: PermitsPage,
 });
 

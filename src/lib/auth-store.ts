@@ -19,6 +19,10 @@ export interface AppUser {
   role: Role;
   permitNumber?: string;
   contactPhone?: string;
+  employeeNumber?: string;
+  position?: string;
+  department?: string;
+  signature?: string;
 }
 
 interface AuthState {
@@ -50,7 +54,11 @@ async function loadAppUser(fb: FbUser): Promise<AppUser> {
   const ref = doc(firebaseDb(), "users", fb.uid);
   const snap = await getDoc(ref);
   if (snap.exists()) {
-    const d = snap.data() as { fullName?: string; role?: Role; email?: string; suspended?: boolean; permitNumber?: string; contactPhone?: string };
+    const d = snap.data() as {
+      fullName?: string; role?: Role; email?: string; suspended?: boolean;
+      permitNumber?: string; contactPhone?: string;
+      employeeNumber?: string; position?: string; department?: string; signature?: string;
+    };
     if (d.suspended) {
       throw new Error("Your account has been suspended. Contact an administrator.");
     }
@@ -61,6 +69,10 @@ async function loadAppUser(fb: FbUser): Promise<AppUser> {
       role: (d.role as Role) ?? "officer",
       permitNumber: d.permitNumber,
       contactPhone: d.contactPhone,
+      employeeNumber: d.employeeNumber,
+      position: d.position,
+      department: d.department,
+      signature: d.signature,
     };
   }
   // Fallback profile for accounts created outside the app
@@ -133,6 +145,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 export function useCurrentUser() {
   return useAuthStore((s) => s.user);
+}
+
+export async function refreshCurrentUser(): Promise<void> {
+  const fb = firebaseAuth().currentUser;
+  if (!fb) return;
+  const u = await loadAppUser(fb);
+  useAuthStore.setState({ user: u });
 }
 
 /** Pages that require admin role. All other authenticated routes are open. */

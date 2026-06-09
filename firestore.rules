@@ -19,6 +19,10 @@ service cloud.firestore {
         'suspended',
         'permitNumber',
         'contactPhone',
+        'employeeNumber',
+        'position',
+        'department',
+        'signature',
         'createdAt',
         'updatedAt'
       ]);
@@ -77,6 +81,13 @@ service cloud.firestore {
         && request.query.where[0].value == request.auth.uid;
     }
 
+    function isOwnAuditQuery() {
+      return request.query.where.size() == 1
+        && request.query.where[0].field == 'actorId'
+        && request.query.where[0].op == '=='
+        && request.query.where[0].value == request.auth.uid;
+    }
+
     match /users/{uid} {
       allow read: if ownsProfile(uid) || isAdmin();
       allow list: if isAdmin();
@@ -92,7 +103,7 @@ service cloud.firestore {
         && request.resource.data.role == resource.data.role
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.suspended == resource.data.suspended)
-        || (isAdmin() && request.resource.data.keys().hasOnly(['role', 'email', 'fullName', 'id', 'createdAt', 'updatedAt', 'suspended', 'permitNumber', 'contactPhone']));
+        || (isAdmin() && request.resource.data.keys().hasOnly(['role', 'email', 'fullName', 'id', 'createdAt', 'updatedAt', 'suspended', 'permitNumber', 'contactPhone', 'employeeNumber', 'position', 'department', 'signature']));
 
       allow delete: if isAdmin();
     }
@@ -148,7 +159,9 @@ service cloud.firestore {
         && request.resource.data.actorId is string
         && request.resource.data.action is string
         && request.resource.data.createdAt is timestamp;
-      allow read, update, delete: if false;
+      allow get: if isSignedIn() && (isAdmin() || resource.data.actorId == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || isOwnAuditQuery());
+      allow update, delete: if false;
     }
 
     match /{document=**} {

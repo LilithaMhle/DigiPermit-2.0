@@ -1,4 +1,17 @@
 import { PERMIT_TYPE_LABELS, type PermitRecord } from "./permits-firestore";
+import { encodeEan13 } from "./ean13";
+import saFlag from "@/assets/South African flag.png";
+
+function flagUrl(): string {
+  if (typeof window !== "undefined") {
+    try {
+      return new URL(saFlag, window.location.origin).href;
+    } catch {
+      return saFlag;
+    }
+  }
+  return saFlag;
+}
 
 function esc(s: unknown): string {
   return String(s ?? "")
@@ -17,19 +30,12 @@ function fmt(d?: string) {
 }
 
 function barcodeSvg(value: string): string {
-  const bars = value.split("").flatMap((c, i) => {
-    const n = c.charCodeAt(0);
-    return [
-      { w: (n % 3) + 1, dark: true },
-      { w: ((n >> 1) % 3) + 1, dark: false },
-      { w: ((n >> 2) % 2) + 1, dark: true },
-    ];
-  });
+  const bars = encodeEan13(value, { includeQuietZone: true });
   let x = 0;
   const height = 70;
   const rects = bars
     .map((b) => {
-      const w = b.w * 2;
+      const w = b.width * 2;
       const rect = b.dark ? `<rect x="${x}" y="0" width="${w}" height="${height}" fill="#0b0b0b"/>` : "";
       x += w;
       return rect;
@@ -49,8 +55,9 @@ export function buildPermitHtml(p: PermitRecord): string {
   * { box-sizing: border-box; }
   body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #0b0b0b; margin: 0; padding: 24px; }
   .doc { max-width: 760px; margin: 0 auto; border: 2px solid #0b0b0b; padding: 28px 32px; position: relative; }
-  .seal { position: absolute; top: 24px; right: 32px; width: 90px; height: 90px; border: 2px solid #0b3d2e; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center; color: #0b3d2e; font-weight: 700; text-align: center; font-size: 10px; line-height: 1.1; }
+  .seal { position: absolute; top: 24px; right: 32px; width: 110px; height: auto; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .seal img { width: 110px; height: auto; display: block; border: 1px solid #0b0b0b; }
+  .seal .seal-label { font-size: 8px; color: #0b3d2e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; line-height: 1.1; }
   header { border-bottom: 2px solid #0b0b0b; padding-bottom: 16px; margin-bottom: 20px; }
   .flag { display: inline-flex; height: 22px; width: 36px; border: 1px solid #999; vertical-align: middle; margin-right: 10px; overflow: hidden; }
   .flag span { flex: 1; }
@@ -65,7 +72,12 @@ export function buildPermitHtml(p: PermitRecord): string {
   .barcode { margin-top: 22px; padding: 14px; border: 1px solid #ccc; text-align: center; }
   .barcode .num { font-family: 'Courier New', monospace; font-size: 14px; letter-spacing: 4px; margin-top: 6px; }
   footer { margin-top: 24px; display: flex; justify-content: space-between; gap: 20px; font-size: 11px; color: #333; }
-  .sigline { border-top: 1px solid #0b0b0b; padding-top: 4px; width: 220px; text-align: center; }
+  .sigblock { width: 260px; text-align: center; }
+  .sigblock .sigimg { height: 70px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; }
+  .sigblock .sigimg img { max-height: 70px; max-width: 240px; }
+  .sigblock .sigimg .empty { color: #999; font-style: italic; font-size: 10px; }
+  .sigline { border-top: 1px solid #0b0b0b; padding-top: 4px; text-align: center; }
+  .sigmeta { font-size: 10px; color: #555; margin-top: 2px; line-height: 1.3; }
   .notice { margin-top: 18px; font-size: 10px; color: #555; border-top: 1px dashed #999; padding-top: 8px; }
   @media print {
     body { padding: 0; }
@@ -83,7 +95,10 @@ export function buildPermitHtml(p: PermitRecord): string {
   <button onclick="window.print()">Print / Save as PDF</button>
 </div>
 <div class="doc">
-  <div class="seal">REPUBLIC OF<br/>SOUTH AFRICA<br/>DHA</div>
+  <div class="seal">
+    <img src="${esc(flagUrl())}" alt="Flag of South Africa" />
+    <div class="seal-label">Republic of<br/>South Africa · DHA</div>
+  </div>
   <header>
     <div>
       <span class="flag">
@@ -125,11 +140,18 @@ export function buildPermitHtml(p: PermitRecord): string {
   </div>
 
   <footer>
-    <div>
+    <div class="sigblock">
+      <div class="sigimg"><span class="empty">— sign here —</span></div>
       <div class="sigline">Holder signature</div>
+      <div class="sigmeta">${esc(p.givenNames)} ${esc(p.surname)}</div>
     </div>
-    <div>
-      <div class="sigline">${esc(p.issuedBy)}<br/><span style="font-size:10px;color:#666">Issuing officer</span></div>
+    <div class="sigblock">
+      <div class="sigimg">${p.issuerSignature ? `<img src="${esc(p.issuerSignature)}" alt="Officer signature" />` : `<span class="empty">[No signature on file]</span>`}</div>
+      <div class="sigline">${esc(p.issuedBy)}</div>
+      <div class="sigmeta">
+        ${esc(p.issuerPosition || "Issuing officer")}${p.issuerDepartment ? ` · ${esc(p.issuerDepartment)}` : ""}<br/>
+        ${p.issuerEmployeeNumber ? `Officer #${esc(p.issuerEmployeeNumber)} · ` : ""}Issued ${esc(fmt(p.issueDate))}
+      </div>
     </div>
   </footer>
 

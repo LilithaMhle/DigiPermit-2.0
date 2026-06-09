@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { generateEan13 } from "./ean13";
 
 export type PermitType = "visa" | "residence" | "work";
 export type PermitStatus = "valid" | "revoked" | "expired";
@@ -49,7 +50,7 @@ const LOCATIONS = [
 ];
 
 function randomBarcode() {
-  return "ZA" + Math.floor(100000000 + Math.random() * 899999999).toString();
+  return generateEan13();
 }
 
 function isoDaysFromNow(days: number) {
@@ -62,7 +63,7 @@ function seedPermits(): Permit[] {
   return [
     {
       id: crypto.randomUUID(),
-      barcode: "ZA482910337",
+      barcode: generateEan13(),
       holderName: "Amara Okafor",
       passport: "A04829103",
       nationality: "Nigerian",
@@ -74,7 +75,7 @@ function seedPermits(): Permit[] {
     },
     {
       id: crypto.randomUUID(),
-      barcode: "ZA771204556",
+      barcode: generateEan13(),
       holderName: "Chen Wei",
       passport: "E77120455",
       nationality: "Chinese",
@@ -86,7 +87,7 @@ function seedPermits(): Permit[] {
     },
     {
       id: crypto.randomUUID(),
-      barcode: "ZA339488112",
+      barcode: generateEan13(),
       holderName: "Priya Sharma",
       passport: "S33948811",
       nationality: "Indian",
@@ -98,7 +99,7 @@ function seedPermits(): Permit[] {
     },
     {
       id: crypto.randomUUID(),
-      barcode: "ZA665012998",
+      barcode: generateEan13(),
       holderName: "João Mendes",
       passport: "P66501299",
       nationality: "Portuguese",
@@ -110,7 +111,7 @@ function seedPermits(): Permit[] {
     },
     {
       id: crypto.randomUUID(),
-      barcode: "ZA101122334",
+      barcode: generateEan13(),
       holderName: "Sarah Mitchell",
       passport: "M10112233",
       nationality: "British",

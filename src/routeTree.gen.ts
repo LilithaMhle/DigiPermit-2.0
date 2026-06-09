@@ -17,6 +17,7 @@ import { Route as AppVerifyRouteImport } from './routes/_app.verify'
 import { Route as AppUsersRouteImport } from './routes/_app.users'
 import { Route as AppScansRouteImport } from './routes/_app.scans'
 import { Route as AppRenewalsRouteImport } from './routes/_app.renewals'
+import { Route as AppProfileRouteImport } from './routes/_app.profile'
 import { Route as AppPermitsRouteImport } from './routes/_app.permits'
 import { Route as AppPermitHolderRouteImport } from './routes/_app.permit-holder'
 import { Route as AppOverviewRouteImport } from './routes/_app.overview'
@@ -62,6 +63,11 @@ const AppRenewalsRoute = AppRenewalsRouteImport.update({
   path: '/renewals',
   getParentRoute: () => AppRoute,
 } as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPermitsRoute = AppPermitsRouteImport.update({
   id: '/permits',
   path: '/permits',
@@ -97,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/overview': typeof AppOverviewRoute
   '/permit-holder': typeof AppPermitHolderRoute
   '/permits': typeof AppPermitsRoute
+  '/profile': typeof AppProfileRoute
   '/renewals': typeof AppRenewalsRoute
   '/scans': typeof AppScansRoute
   '/users': typeof AppUsersRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   '/overview': typeof AppOverviewRoute
   '/permit-holder': typeof AppPermitHolderRoute
   '/permits': typeof AppPermitsRoute
+  '/profile': typeof AppProfileRoute
   '/renewals': typeof AppRenewalsRoute
   '/scans': typeof AppScansRoute
   '/users': typeof AppUsersRoute
@@ -127,6 +135,7 @@ export interface FileRoutesById {
   '/_app/overview': typeof AppOverviewRoute
   '/_app/permit-holder': typeof AppPermitHolderRoute
   '/_app/permits': typeof AppPermitsRoute
+  '/_app/profile': typeof AppProfileRoute
   '/_app/renewals': typeof AppRenewalsRoute
   '/_app/scans': typeof AppScansRoute
   '/_app/users': typeof AppUsersRoute
@@ -143,6 +152,7 @@ export interface FileRouteTypes {
     | '/overview'
     | '/permit-holder'
     | '/permits'
+    | '/profile'
     | '/renewals'
     | '/scans'
     | '/users'
@@ -157,6 +167,7 @@ export interface FileRouteTypes {
     | '/overview'
     | '/permit-holder'
     | '/permits'
+    | '/profile'
     | '/renewals'
     | '/scans'
     | '/users'
@@ -172,6 +183,7 @@ export interface FileRouteTypes {
     | '/_app/overview'
     | '/_app/permit-holder'
     | '/_app/permits'
+    | '/_app/profile'
     | '/_app/renewals'
     | '/_app/scans'
     | '/_app/users'
@@ -243,6 +255,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRenewalsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/profile': {
+      id: '/_app/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/permits': {
       id: '/_app/permits'
       path: '/permits'
@@ -287,6 +306,7 @@ interface AppRouteChildren {
   AppOverviewRoute: typeof AppOverviewRoute
   AppPermitHolderRoute: typeof AppPermitHolderRoute
   AppPermitsRoute: typeof AppPermitsRoute
+  AppProfileRoute: typeof AppProfileRoute
   AppRenewalsRoute: typeof AppRenewalsRoute
   AppScansRoute: typeof AppScansRoute
   AppUsersRoute: typeof AppUsersRoute
@@ -299,6 +319,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppOverviewRoute: AppOverviewRoute,
   AppPermitHolderRoute: AppPermitHolderRoute,
   AppPermitsRoute: AppPermitsRoute,
+  AppProfileRoute: AppProfileRoute,
   AppRenewalsRoute: AppRenewalsRoute,
   AppScansRoute: AppScansRoute,
   AppUsersRoute: AppUsersRoute,

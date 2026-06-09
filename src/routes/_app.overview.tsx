@@ -31,7 +31,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_app/overview")({
   head: () => ({
     meta: [
-      { title: "Overview · Smart Permit Verification & Monitoring" },
+      { title: "Overview · DigiPermit Verification System" },
       { name: "description", content: "Real-time dashboard for permit verification, scan activity, and AI fraud alerts." },
     ],
   }),

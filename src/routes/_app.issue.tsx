@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle2, Copy, Printer, Loader2 } from "lucide-react";
+import { CheckCircle2, Copy, Printer, Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import {
   PERMIT_TYPE_LABELS,
@@ -23,10 +23,12 @@ import {
   type PermitType,
 } from "@/lib/permits-firestore";
 import { printPermit } from "@/lib/print-permit";
+import { encodeEan13 } from "@/lib/ean13";
 import { useCurrentUser } from "@/lib/auth-store";
+import { logAuditEvent } from "@/lib/audit-firestore";
 
 export const Route = createFileRoute("/_app/issue")({
-  head: () => ({ meta: [{ title: "Issue Permit · SPVMS" }] }),
+  head: () => ({ meta: [{ title: "Issue Permit · DigiPermit" }] }),
   component: IssuePage,
 });
 
@@ -69,6 +71,10 @@ function IssuePage() {
       toast.error("You must be signed in.");
       return;
     }
+    if (!user.signature) {
+      toast.error("You must add an official signature in your profile before issuing permits.");
+      return;
+    }
     if (
       !form.surname ||
       !form.givenNames ||
@@ -103,9 +109,24 @@ function IssuePage() {
           institution: isStudy ? form.institution.trim() || undefined : undefined,
           conditions: form.conditions.trim() || undefined,
         },
-        { uid: user.id, name: user.fullName || user.email },
+        {
+          uid: user.id,
+          name: user.fullName || user.email,
+          signature: user.signature,
+          position: user.position,
+          department: user.department,
+          employeeNumber: user.employeeNumber,
+        },
       );
       setIssued(record);
+      void logAuditEvent({
+        actorId: user.id,
+        actorEmail: user.email,
+        action: "permit_issued",
+        targetId: record.id,
+        targetType: "permit",
+        details: JSON.stringify({ permitNumber: record.permitNumber, holder: `${record.givenNames} ${record.surname}` }),
+      });
       toast.success("Permit issued and saved to the database.");
     } catch (err) {
       toast.error((err as Error).message ?? "Failed to issue permit.");
@@ -141,6 +162,17 @@ function IssuePage() {
           and a printable PDF is generated for the holder.
         </p>
       </div>
+
+      {user && !user.signature && (
+        <Card className="p-4 border-destructive/40 bg-destructive/5 flex items-start gap-3">
+          <AlertTriangle className="size-5 text-destructive shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm">
+            <p className="font-medium">Signature required</p>
+            <p className="text-muted-foreground">You must register an official signature before issuing permits. Issued permits include the officer's signature in the approval section.</p>
+          </div>
+          <Button asChild size="sm" variant="secondary"><Link to="/profile">Open profile</Link></Button>
+        </Card>
+      )}
 
       {issued ? (
         <Card className="p-8 border-success/30 bg-success/5">

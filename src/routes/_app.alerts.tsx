@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   AlertTriangle,
   Brain,
@@ -11,6 +12,9 @@ import {
   Loader2,
   Sparkles,
   TrendingUp,
+  Activity,
+  CalendarClock,
+  Gauge,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -19,14 +23,25 @@ import {
   type AIAlert,
   type AlertType,
 } from "@/lib/alerts-firestore";
+import { subscribeToScans, type ScanEvent } from "@/lib/scans-firestore";
+import { listPermits, listExpiringPermits } from "@/lib/permits-firestore";
+import { listRenewalRequests } from "@/lib/renewal-firestore";
 import { useCurrentUser } from "@/lib/auth-store";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeAlerts, type AiAnalystResult } from "@/lib/ai-analyst.functions";
+import {
+  analyzeScans,
+  briefOverview,
+  type ScanInsight,
+  type OverviewBrief,
+} from "@/lib/ai-insights.functions";
+import { AiInsightCard } from "@/components/ai/AiInsightCard";
 import { Badge } from "@/components/ui/badge";
+import { RefreshCw } from "lucide-react";
 
 export const Route = createFileRoute("/_app/alerts")({
-  head: () => ({ meta: [{ title: "AI Alerts · SPVMS" }] }),
+  head: () => ({ meta: [{ title: "AI Intelligence · DigiPermit" }] }),
   component: AlertsPage,
 });
 
@@ -39,15 +54,59 @@ const typeMeta: Record<AlertType, { Icon: typeof Repeat; label: string }> = {
 function AlertsPage() {
   const user = useCurrentUser();
   const [alerts, setAlerts] = useState<AIAlert[] | null>(null);
+  const [scans, setScans] = useState<ScanEvent[]>([]);
+  const [totalPermits, setTotalPermits] = useState(0);
+  const [expiringCount, setExpiringCount] = useState(0);
+  const [pendingRenewals, setPendingRenewals] = useState(0);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<AiAnalystResult | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAnalyzedAt, setAiAnalyzedAt] = useState<Date | null>(null);
+  const [manualRefreshTick, setManualRefreshTick] = useState(0);
   const runAnalysis = useServerFn(analyzeAlerts);
+
+  // Scan analyst
+  const [scanInsight, setScanInsight] = useState<ScanInsight | null>(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanAnalyzedAt, setScanAnalyzedAt] = useState<Date | null>(null);
+  const runScanAnalyze = useServerFn(analyzeScans);
+
+  // Shift briefing
+  const [brief, setBrief] = useState<OverviewBrief | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefError, setBriefError] = useState<string | null>(null);
+  const [briefAt, setBriefAt] = useState<Date | null>(null);
+  const runBrief = useServerFn(briefOverview);
 
   useEffect(() => {
     const unsub = subscribeToAlerts((a) => setAlerts(a));
-    return () => unsub();
+    const unsubScans = subscribeToScans((s) => setScans(s), 200);
+    (async () => {
+      try {
+        const [p, exp, ren] = await Promise.all([
+          listPermits(),
+          listExpiringPermits(30),
+          listRenewalRequests(),
+        ]);
+        setTotalPermits(p.length);
+        setExpiringCount(exp.length);
+        setPendingRenewals(
+          ren.filter(
+            (r) =>
+              r.status === "submitted" ||
+              r.status === "under_review" ||
+              r.status === "info_required",
+          ).length,
+        );
+      } catch {
+        /* non-fatal */
+      }
+    })();
+    return () => {
+      unsub();
+      unsubScans();
+    };
   }, []);
 
   const onResolve = async (id: string) => {
@@ -124,37 +183,236 @@ function AlertsPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openSignature, alerts === null]);
+  }, [openSignature, alerts === null, manualRefreshTick]);
+
+  // ── Scan analyst auto-run ──────────────────────────────────────────────
+  const scanSig = useMemo(
+    () => scans.slice(0, 50).map((s) => `${s.id}:${s.result}`).join("|"),
+    [scans],
+  );
+  const runScanAi = useMemo(
+    () => async () => {
+      const list = scans.slice(0, 50);
+      if (list.length === 0) {
+        setScanInsight(null);
+        return;
+      }
+      setScanLoading(true);
+      setScanError(null);
+      try {
+        const res = await runScanAnalyze({
+          data: {
+            scans: list.map((s) => ({
+              barcode: s.barcode,
+              result: s.result,
+              locationLabel: s.locationLabel,
+              officerName: s.officerName,
+              ageMinutes: s.timestamp
+                ? Math.round((Date.now() - s.timestamp.toDate().getTime()) / 60000)
+                : null,
+            })),
+          },
+        });
+        setScanInsight(res);
+        setScanAnalyzedAt(new Date());
+      } catch (e) {
+        setScanError((e as Error).message ?? "AI analysis failed.");
+      } finally {
+        setScanLoading(false);
+      }
+    },
+    [scans, runScanAnalyze],
+  );
+  useEffect(() => {
+    void runScanAi();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanSig]);
+
+  // ── Shift briefing auto-run ────────────────────────────────────────────
+  const scansToday = useMemo(() => {
+    const t = new Date().toDateString();
+    return scans.filter((s) => s.timestamp && s.timestamp.toDate().toDateString() === t);
+  }, [scans]);
+  const invalidRateToday = scansToday.length
+    ? Math.round(
+        (scansToday.filter((s) => s.result !== "valid").length / scansToday.length) * 100,
+      )
+    : 0;
+  const hotspots = useMemo(() => {
+    const map: Record<string, { location: string; total: number; invalid: number }> = {};
+    scans.forEach((s) => {
+      if (!map[s.locationLabel])
+        map[s.locationLabel] = { location: s.locationLabel, total: 0, invalid: 0 };
+      map[s.locationLabel].total++;
+      if (s.result !== "valid") map[s.locationLabel].invalid++;
+    });
+    return Object.values(map).sort((a, b) => b.invalid - a.invalid).slice(0, 5);
+  }, [scans]);
+
+  const briefSig = `${totalPermits}|${scansToday.length}|${open.length}|${invalidRateToday}|${expiringCount}|${pendingRenewals}|${hotspots.map((h) => h.location + h.invalid).join(",")}`;
+
+  const runBriefNow = useMemo(
+    () => async () => {
+      setBriefLoading(true);
+      setBriefError(null);
+      try {
+        const res = await runBrief({
+          data: {
+            totalPermits,
+            expiringCount,
+            pendingRenewals,
+            openAlerts: open.length,
+            scansToday: scansToday.length,
+            invalidRateToday,
+            topHotspots: hotspots.map((h) => ({
+              location: h.location,
+              invalid: h.invalid,
+              total: h.total,
+            })),
+            recentAlertTypes: open.slice(0, 10).map((a) => a.type),
+          },
+        });
+        setBrief(res);
+        setBriefAt(new Date());
+      } catch (e) {
+        setBriefError((e as Error).message ?? "AI briefing failed.");
+      } finally {
+        setBriefLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [briefSig],
+  );
+  useEffect(() => {
+    if (alerts === null) return;
+    void runBriefNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [briefSig, alerts === null]);
 
   return (
-    <div className="p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">AI Analytics</p>
-        <h1 className="text-3xl font-semibold tracking-tight">Fraud & Anomaly Alerts</h1>
-        <p className="text-muted-foreground">
-          Patterns automatically detected from scan activity. Alerts are generated server-side as scans arrive.
-        </p>
+    <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
+      <div className="relative overflow-hidden rounded-xl border bg-card p-6">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.06]"
+          style={{ background: "var(--gradient-accent, linear-gradient(135deg,#7c3aed,#06b6d4))" }}
+        />
+        <div className="relative flex items-start justify-between flex-wrap gap-4">
+          <div className="flex items-start gap-4">
+            <div className="size-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+              <Brain className="size-6" />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                AI Intelligence Hub
+              </p>
+              <h1 className="text-3xl font-semibold tracking-tight">Alerts & AI Analysts</h1>
+              <p className="text-muted-foreground text-sm mt-1 max-w-2xl">
+                Consolidated fraud detection, scan operations, and shift briefings — powered
+                by live data and Lovable AI.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+            Live monitoring
+          </div>
+        </div>
       </div>
 
-      <Card className="p-5 flex items-center gap-4 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.06]" style={{ background: "var(--gradient-accent)" }} />
-        <div className="size-12 rounded-lg bg-accent/20 flex items-center justify-center text-accent-foreground relative">
-          <Brain className="size-6" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard label="Open alerts" value={open.length} Icon={AlertTriangle} tone={open.length > 0 ? "danger" : "ok"} />
+        <KpiCard label="Scans today" value={scansToday.length} Icon={Activity} />
+        <KpiCard label="Invalid rate" value={`${invalidRateToday}%`} Icon={Gauge} tone={invalidRateToday > 20 ? "warn" : undefined} />
+        <KpiCard label="Expiring (30d)" value={expiringCount} Icon={CalendarClock} tone={expiringCount > 0 ? "warn" : undefined} />
+      </div>
+
+      <Card className="p-5">
+        <Tabs defaultValue="fraud" className="space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-4 text-primary" />
+              <h2 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                AI Analysts
+              </h2>
+            </div>
+            <TabsList>
+              <TabsTrigger value="fraud">Fraud Analyst</TabsTrigger>
+              <TabsTrigger value="briefing">Shift Briefing</TabsTrigger>
+              <TabsTrigger value="scans">Scan Analyst</TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value="fraud">
+            <AiAnalystPanel
+              loading={aiLoading}
+              result={aiResult}
+              openCount={open.length}
+              analyzedAt={aiAnalyzedAt}
+              onRefresh={() => setManualRefreshTick((n) => n + 1)}
+            />
+          </TabsContent>
+
+          <TabsContent value="briefing">
+            <AiInsightCard
+              title="AI Shift Briefing"
+              loading={briefLoading}
+              error={briefError}
+              risk={brief?.riskLevel}
+              headline={brief?.headline}
+              summary={brief?.summary}
+              sections={
+                brief
+                  ? [
+                      { label: "Trends", items: brief.trends },
+                      { label: "Top actions this shift", items: brief.topActions },
+                    ]
+                  : []
+              }
+              analyzedAt={briefAt}
+              onRefresh={() => void runBriefNow()}
+              emptyMessage="Briefing will generate once data is loaded."
+            />
+          </TabsContent>
+
+          <TabsContent value="scans">
+            <AiInsightCard
+              title="AI Scan Analyst"
+              loading={scanLoading}
+              error={scanError}
+              risk={scanInsight?.riskLevel}
+              headline={scanInsight?.headline}
+              summary={scanInsight?.summary}
+              sections={
+                scanInsight
+                  ? [
+                      { label: "Hotspots", items: scanInsight.hotspots },
+                      { label: "Watch these barcodes", items: scanInsight.watchBarcodes },
+                      { label: "Recommended actions", items: scanInsight.recommendations },
+                    ]
+                  : []
+              }
+              analyzedAt={scanAnalyzedAt}
+              onRefresh={() => {
+                void runScanAi();
+                toast.message("Re-running scan analysis…");
+              }}
+              emptyMessage="No scans yet to analyze."
+            />
+          </TabsContent>
+        </Tabs>
+      </Card>
+
+      <Card className="p-4 flex items-center gap-4">
+        <div className="size-10 rounded-lg bg-accent/15 flex items-center justify-center text-accent-foreground shrink-0">
+          <ShieldCheck className="size-5" />
         </div>
-        <div className="relative">
-          <div className="font-semibold">Active detection rules</div>
-          <div className="text-sm text-muted-foreground">
-            Repeated expired/revoked scans (≥2 in 1h) · Location anomaly (same permit at 3+ checkpoints in 1h) · Burst of unregistered barcodes at a single checkpoint (≥3 in 1h)
+        <div className="text-sm">
+          <div className="font-medium">Active detection rules</div>
+          <div className="text-muted-foreground text-xs mt-0.5">
+            Repeated expired/revoked scans (≥2 in 1h) · Location anomaly (same permit at 3+ checkpoints in 1h) · Burst of unregistered barcodes at a checkpoint (≥3 in 1h)
           </div>
         </div>
       </Card>
-
-      <AiAnalystPanel
-        loading={aiLoading}
-        result={aiResult}
-        openCount={open.length}
-        analyzedAt={aiAnalyzedAt}
-      />
 
       {alerts === null ? (
         <Card className="p-10 text-center text-muted-foreground">
@@ -273,16 +531,50 @@ function PriorityBadge({ priority }: { priority: "low" | "medium" | "high" | "cr
   );
 }
 
+function KpiCard({
+  label,
+  value,
+  Icon,
+  tone,
+}: {
+  label: string;
+  value: number | string;
+  Icon: typeof Activity;
+  tone?: "ok" | "warn" | "danger";
+}) {
+  const toneClass =
+    tone === "danger"
+      ? "text-destructive bg-destructive/10"
+      : tone === "warn"
+        ? "text-amber-600 bg-amber-500/10"
+        : tone === "ok"
+          ? "text-emerald-600 bg-emerald-500/10"
+          : "text-primary bg-primary/10";
+  return (
+    <Card className="p-4 flex items-center gap-3">
+      <div className={`size-10 rounded-lg flex items-center justify-center ${toneClass}`}>
+        <Icon className="size-5" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="text-xl font-semibold tracking-tight">{value}</div>
+      </div>
+    </Card>
+  );
+}
+
 function AiAnalystPanel({
   loading,
   result,
   openCount,
   analyzedAt,
+  onRefresh,
 }: {
   loading: boolean;
   result: AiAnalystResult | null;
   openCount: number;
   analyzedAt: Date | null;
+  onRefresh?: () => void;
 }) {
   return (
     <Card className="p-5 space-y-4 border-accent/40">
@@ -309,11 +601,18 @@ function AiAnalystPanel({
             </div>
           </div>
         </div>
-        {loading && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Analyzing…
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {loading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" /> Analyzing…
+            </div>
+          )}
+          {onRefresh && (
+            <Button size="sm" variant="ghost" onClick={onRefresh} disabled={loading || openCount === 0}>
+              <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+          )}
+        </div>
       </div>
 
       {result && (

@@ -1,7 +1,7 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { subscribeToAlerts } from "@/lib/alerts-firestore";
-import { Shield, LayoutDashboard, FileCheck2, ScanLine, FilePlus2, AlertTriangle, ListChecks, LogOut, PanelLeftClose, PanelLeftOpen, Users } from "lucide-react";
+import { Shield, LayoutDashboard, FileCheck2, ScanLine, FilePlus2, AlertTriangle, ListChecks, LogOut, PanelLeftClose, PanelLeftOpen, Users, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore, useCurrentUser } from "@/lib/auth-store";
 import { useNavigate } from "@tanstack/react-router";
@@ -26,6 +26,7 @@ const nav = [
   { to: "/renewals", label: "Renewal Requests", icon: ListChecks, roles: ["admin"] },
   { to: "/scans", label: "Scan Log", icon: ListChecks, roles: ["admin", "officer"] },
   { to: "/alerts", label: "AI Alerts", icon: AlertTriangle, roles: ["admin", "officer"] },
+  { to: "/profile", label: "Profile", icon: UserCircle, roles: ["admin", "officer", "permit_holder"] },
 ];
 
 export function AppLayout() {
@@ -82,7 +83,7 @@ export function AppLayout() {
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <div className="font-semibold text-sm leading-tight truncate">SPVMS</div>
+                <div className="font-semibold text-sm leading-tight truncate">DigiPermit</div>
                 <div className="text-[11px] text-muted-foreground leading-tight truncate">Home Affairs · RSA</div>
               </div>
             )}
@@ -162,7 +163,7 @@ export function AppLayout() {
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <header className="md:hidden border-b border-border bg-card px-4 py-3 flex items-center justify-between">
           <Link to={homePath} className="flex items-center gap-2 font-semibold">
-            <Shield className="size-5 text-primary" /> SPVMS
+            <Shield className="size-5 text-primary" /> DigiPermit
           </Link>
         </header>
         <main className="flex-1 overflow-auto">

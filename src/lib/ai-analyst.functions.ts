@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
-import { generateText, Output } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway.server";
+import { generateStructured } from "./ai-structured.server";
 
 const AlertInput = z.object({
   id: z.string(),
@@ -57,7 +57,7 @@ export const analyzeAlerts = createServerFn({ method: "POST" })
 
     const gateway = createLovableAiGatewayProvider(key);
 
-    const system = `You are an AI fraud analyst for the South African Department of Home Affairs Smart Permit Verification and Monitoring System (SPVMS).
+    const system = `You are an AI fraud analyst for the South African Department of Home Affairs DigiPermit Verification System (DigiPermit).
 You receive a list of fraud / anomaly alerts produced by rule-based detection on permit scan events at border posts, airports, harbours, and DHA checkpoints.
 Alert types:
 - repeated_expired: same permit barcode scanned 2+ times while expired or revoked within an hour
@@ -73,13 +73,12 @@ Your job: prioritize alerts, identify cross-alert patterns (e.g. coordinated fra
     )}`;
 
     try {
-      const { experimental_output } = await generateText({
+      return await generateStructured({
         model: gateway("google/gemini-3-flash-preview"),
         system,
         prompt,
-        experimental_output: Output.object({ schema: OutputSchema }),
+        schema: OutputSchema,
       });
-      return experimental_output;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("429")) {

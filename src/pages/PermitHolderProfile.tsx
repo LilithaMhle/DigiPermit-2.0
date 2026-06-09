@@ -10,6 +10,26 @@ import { getPermitByNumber, PermitRecord, computedStatus } from "@/lib/permits-f
 import { createRenewalRequest, listUserRenewalRequests, RenewalRequest, addRenewalResponse } from "@/lib/renewal-firestore";
 import { updateUserProfile } from "@/lib/users-firestore";
 import { printPermit } from "@/lib/print-permit";
+import { logAuditEvent } from "@/lib/audit-firestore";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ShieldCheck, Lock } from "lucide-react";
+import {
+  pickVerificationQuestions,
+  checkAnswer,
+  getLockState,
+  recordFailure,
+  recordSuccess,
+  formatLockRemaining,
+  MAX_ATTEMPTS,
+  type VerificationQuestion,
+} from "@/lib/verification";
 
 function formatDate(value?: string): string {
   if (!value) return "—";
@@ -33,6 +53,15 @@ export default function PermitHolderProfile() {
   const [replyMessage, setReplyMessage] = useState("");
   const [replying, setReplying] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+
+  // Ownership verification state
+  const [pendingPermit, setPendingPermit] = useState<PermitRecord | null>(null);
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const [questions, setQuestions] = useState<VerificationQuestion[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [verifying, setVerifying] = useState(false);
+  const [lockInfo, setLockInfo] = useState<{ locked: boolean; remainingMs: number; attemptsUsed: number }>({ locked: false, remainingMs: 0, attemptsUsed: 0 });
+  const [saveAfterVerify, setSaveAfterVerify] = useState(true);
 
   const isPermitHolder = user?.role === "permit_holder";
 
@@ -75,31 +104,101 @@ export default function PermitHolderProfile() {
 
   const fetchPermit = async (saveToProfile = true) => {
     if (!permitNumber?.trim()) return toast.error("Enter a permit number.");
+    const num = permitNumber.trim();
+    const lock = getLockState(num, user?.id);
+    if (lock.locked) {
+      setLockInfo(lock);
+      toast.error(`Too many failed attempts. Locked for ${formatLockRemaining(lock.remainingMs)}.`);
+      return;
+    }
     setLoading(true);
     try {
-      const result = await getPermitByNumber(permitNumber.trim());
+      const result = await getPermitByNumber(num);
       if (!result) {
         toast.error("Permit not found. Please verify the number and try again.");
         setPermit(null);
         return;
       }
-      setPermit(result);
-      if (saveToProfile && user) {
-        try {
-          await updateUserProfile(user.id, { permitNumber: result.permitNumber });
-          setProfileSaved(true);
-          toast.success("Permit loaded successfully.");
-        } catch (err) {
-          toast.error("Permit loaded, but profile could not be saved.");
-        }
-      } else {
+      // If this permit is already linked to the signed-in profile, skip verification.
+      if (user?.permitNumber && user.permitNumber.toUpperCase() === result.permitNumber.toUpperCase()) {
+        setPermit(result);
+        recordSuccess(result.permitNumber, user.id);
+        void logAuditEvent({ actorId: user.id, actorEmail: user.email, action: "permit_viewed", targetId: result.id, targetType: "permit", details: result.permitNumber });
         toast.success("Saved permit loaded.");
+        return;
       }
+      // Otherwise require ownership verification before exposing the record.
+      setPendingPermit(result);
+      setQuestions(pickVerificationQuestions(result, 3));
+      setAnswers({});
+      setSaveAfterVerify(saveToProfile);
+      setLockInfo(getLockState(result.permitNumber, user?.id));
+      setVerifyOpen(true);
     } catch (err) {
       toast.error((err as Error).message || "Unable to load permit.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const submitVerification = async () => {
+    if (!pendingPermit || !user) return;
+    setVerifying(true);
+    try {
+      const allCorrect = questions.every((q) => checkAnswer(q, answers[q.key] ?? ""));
+      if (!allCorrect) {
+        const res = recordFailure(pendingPermit.permitNumber, user.id);
+        void logAuditEvent({
+          actorId: user.id,
+          actorEmail: user.email,
+          action: "permit_verification_failed",
+          targetType: "permit",
+          details: JSON.stringify({ permitNumber: pendingPermit.permitNumber, attemptsUsed: res.attemptsUsed, device: typeof navigator !== "undefined" ? navigator.userAgent : "" }),
+        });
+        setLockInfo(getLockState(pendingPermit.permitNumber, user.id));
+        if (res.locked) {
+          toast.error(`Verification failed. Account temporarily locked after ${MAX_ATTEMPTS} failed attempts.`);
+          setVerifyOpen(false);
+          setPendingPermit(null);
+        } else {
+          toast.error(`Verification failed. ${res.remaining} attempt${res.remaining === 1 ? "" : "s"} remaining.`);
+        }
+        return;
+      }
+      // Success
+      recordSuccess(pendingPermit.permitNumber, user.id);
+      setPermit(pendingPermit);
+      void logAuditEvent({
+        actorId: user.id,
+        actorEmail: user.email,
+        action: "permit_verification_passed",
+        targetId: pendingPermit.id,
+        targetType: "permit",
+        details: JSON.stringify({ permitNumber: pendingPermit.permitNumber, device: typeof navigator !== "undefined" ? navigator.userAgent : "" }),
+      });
+      void logAuditEvent({ actorId: user.id, actorEmail: user.email, action: "permit_viewed", targetId: pendingPermit.id, targetType: "permit", details: pendingPermit.permitNumber });
+      if (saveAfterVerify) {
+        try {
+          await updateUserProfile(user.id, { permitNumber: pendingPermit.permitNumber });
+          setProfileSaved(true);
+        } catch {
+          // non-fatal; permit still shown
+        }
+      }
+      toast.success("Identity verified. Permit loaded.");
+      setVerifyOpen(false);
+      setPendingPermit(null);
+      setAnswers({});
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const printVerifiedPermit = (p: PermitRecord) => {
+    if (user) {
+      void logAuditEvent({ actorId: user.id, actorEmail: user.email, action: "permit_printed", targetId: p.id, targetType: "permit", details: p.permitNumber });
+    }
+    printPermit(p);
   };
 
   const clearSavedPermit = async () => {
@@ -253,7 +352,7 @@ export default function PermitHolderProfile() {
               <h2 className="text-xl font-semibold">{permit.permitNumber}</h2>
             </div>
             <div className="flex gap-2 flex-wrap">
-              <Button onClick={() => printPermit(permit)}>Print / Save PDF</Button>
+              <Button onClick={() => printVerifiedPermit(permit)}>Print / Save PDF</Button>
             </div>
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
@@ -402,6 +501,55 @@ export default function PermitHolderProfile() {
           )}
         </Card>
       </div>
+
+      <Dialog open={verifyOpen} onOpenChange={(o) => { if (!o) { setVerifyOpen(false); setPendingPermit(null); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ShieldCheck className="size-5 text-primary" /> Verify permit ownership</DialogTitle>
+            <DialogDescription>
+              For your security, please confirm a few details from the permit record before we display the information.
+            </DialogDescription>
+          </DialogHeader>
+          {lockInfo.locked ? (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 flex items-start gap-3">
+              <Lock className="size-5 text-destructive shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-medium">Temporarily locked</p>
+                <p className="text-muted-foreground">Too many failed attempts. Please try again in {formatLockRemaining(lockInfo.remainingMs)}.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {questions.map((q) => (
+                <div key={q.key} className="space-y-1.5">
+                  <Label htmlFor={`vq-${q.key}`} className="text-sm">{q.label}</Label>
+                  <Input
+                    id={`vq-${q.key}`}
+                    type={q.type === "date" ? "date" : "text"}
+                    value={answers[q.key] ?? ""}
+                    onChange={(e) => setAnswers((a) => ({ ...a, [q.key]: e.target.value }))}
+                    placeholder={q.hint}
+                    autoComplete="off"
+                  />
+                </div>
+              ))}
+              {lockInfo.attemptsUsed > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {MAX_ATTEMPTS - lockInfo.attemptsUsed} attempt{MAX_ATTEMPTS - lockInfo.attemptsUsed === 1 ? "" : "s"} remaining before lockout.
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setVerifyOpen(false); setPendingPermit(null); }}>Cancel</Button>
+            {!lockInfo.locked && (
+              <Button onClick={submitVerification} disabled={verifying || questions.some((q) => !(answers[q.key] ?? "").trim())}>
+                {verifying ? "Verifying…" : "Verify and load"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

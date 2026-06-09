@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,6 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { listRenewalRequests, updateRenewalRequestStatus, RenewalRequest } from "@/lib/renewal-firestore";
 import { updatePermit, getPermitByNumber } from "@/lib/permits-firestore";
+import { AiInsightCard } from "@/components/ai/AiInsightCard";
+import { useServerFn } from "@tanstack/react-start";
+import { reviewRenewal, type RenewalReview } from "@/lib/ai-insights.functions";
 
 export const Route = createFileRoute("/_app/renewals")({
   head: () => ({ meta: [{ title: "Renewal Requests · Admin" }] }),
@@ -23,6 +26,60 @@ function RenewalsPage() {
   const [infoMessage, setInfoMessage] = useState<string>("");
   const [rejectReason, setRejectReason] = useState<string>("");
   const [approveExpiryDate, setApproveExpiryDate] = useState<string>("");
+  const [aiReview, setAiReview] = useState<RenewalReview | null>(null);
+  const [aiReviewLoading, setAiReviewLoading] = useState(false);
+  const [aiReviewError, setAiReviewError] = useState<string | null>(null);
+  const runReview = useServerFn(reviewRenewal);
+
+  useEffect(() => {
+    if (!showDetailsModal || !selectedRequest) {
+      setAiReview(null);
+      setAiReviewError(null);
+      return;
+    }
+    let cancelled = false;
+    setAiReview(null);
+    setAiReviewError(null);
+    setAiReviewLoading(true);
+    (async () => {
+      try {
+        let permitType: string | null = null;
+        let currentStatus: string | null = null;
+        let currentExpiry: string | null = null;
+        try {
+          const p = await getPermitByNumber(selectedRequest.permitNumber);
+          if (p) {
+            permitType = p.permitType;
+            currentStatus = p.status;
+            currentExpiry = p.expiryDate;
+          }
+        } catch {
+          /* tolerate lookup failure */
+        }
+        const res = await runReview({
+          data: {
+            permitNumber: selectedRequest.permitNumber,
+            permitType,
+            currentStatus,
+            currentExpiry,
+            holderName: selectedRequest.userName,
+            comments: selectedRequest.comments ?? "",
+            priorRenewals: selectedRequest.responses?.length ?? 0,
+            openAlertsForBarcode: 0,
+            recentInvalidScans: 0,
+          },
+        });
+        if (!cancelled) setAiReview(res);
+      } catch (e) {
+        if (!cancelled) setAiReviewError((e as Error).message ?? "AI review failed.");
+      } finally {
+        if (!cancelled) setAiReviewLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showDetailsModal, selectedRequest, runReview]);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ["admin", "renewals"],
@@ -233,6 +290,41 @@ function RenewalsPage() {
                   </div>
                 </div>
               )}
+
+              <AiInsightCard
+                title="AI Renewal Recommendation"
+                loading={aiReviewLoading}
+                error={aiReviewError}
+                risk={
+                  aiReview
+                    ? aiReview.recommendation === "approve"
+                      ? "low"
+                      : aiReview.recommendation === "request_more_info"
+                        ? "medium"
+                        : "high"
+                    : undefined
+                }
+                headline={
+                  aiReview
+                    ? aiReview.recommendation === "approve"
+                      ? "Recommend: Approve"
+                      : aiReview.recommendation === "request_more_info"
+                        ? "Recommend: Request more info"
+                        : "Recommend: Reject"
+                    : undefined
+                }
+                summary={aiReview?.reasoning}
+                sections={
+                  aiReview
+                    ? [
+                        { label: `Risk factors (confidence: ${aiReview.confidence})`, items: aiReview.riskFactors },
+                      ]
+                    : []
+                }
+                analyzedAt={aiReview ? new Date() : null}
+                compact
+              />
+
               {modalMode === "reject" && (
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">Rejection reason</p>

@@ -6,7 +6,7 @@ import { ShieldAlert } from "lucide-react";
 export const Route = createFileRoute("/access-denied")({
   head: () => ({
     meta: [
-      { title: "Access denied · SPVMS" },
+      { title: "Access denied · DigiPermit" },
       { name: "description", content: "You do not have permission to view this page." },
     ],
   }),

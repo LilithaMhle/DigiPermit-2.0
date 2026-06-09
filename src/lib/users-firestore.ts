@@ -14,6 +14,10 @@ export interface AppUserProfile {
   suspended?: boolean;
   permitNumber?: string | null;
   contactPhone?: string | null;
+  employeeNumber?: string | null;
+  position?: string | null;
+  department?: string | null;
+  signature?: string | null;
   createdAt?: any;
 }
 

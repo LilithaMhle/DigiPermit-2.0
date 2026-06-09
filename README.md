@@ -1,4 +1,4 @@
-# SPVMS — Smart Permit Verification & Monitoring System
+# DigiPermit — DigiPermit Verification System
 
 A full-stack web application for the Department of Home Affairs, South Africa, providing real-time permit verification, issuance, and intelligent monitoring across border checkpoints.
 
@@ -6,7 +6,7 @@ A full-stack web application for the Department of Home Affairs, South Africa, p
 
 ## Overview
 
-SPVMS enables Home Affairs officials and enforcement officers to verify visas, residence permits, and work permits instantly by scanning barcodes at border posts. The platform connects issuance, verification, and intelligence in a single, unified system with role-based access control, AI-powered fraud detection, and complete audit trails.
+DigiPermit enables Home Affairs officials and enforcement officers to verify visas, residence permits, and work permits instantly by scanning barcodes at border posts. The platform connects issuance, verification, and intelligence in a single, unified system with role-based access control, AI-powered fraud detection, and complete audit trails.
 
 ---
 
@@ -169,7 +169,7 @@ Administrators can embed a Power BI report on the Overview dashboard for executi
 1. In Power BI Desktop, build your report and publish to Power BI Service.
 2. In Power BI Service, open the report and choose **File → Embed report → Publish to web**.
 3. Copy the embed URL (or full iframe snippet).
-4. In SPVMS, navigate to **Overview → Configure** (admin-only) and paste the URL.
+4. In DigiPermit, navigate to **Overview → Configure** (admin-only) and paste the URL.
 
 > **Security note:** "Publish to web" creates a publicly accessible link. Use it only for non-sensitive aggregate dashboards. For sensitive data, use Power BI Embedded with a secure embed token instead.
 

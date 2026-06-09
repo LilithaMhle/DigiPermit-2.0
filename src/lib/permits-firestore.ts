@@ -13,6 +13,7 @@ import {
   type Timestamp,
 } from "firebase/firestore";
 import { firebaseDb } from "./firebase";
+import { generateEan13 } from "./ean13";
 
 export type PermitType =
   | "visitor_visa"
@@ -51,6 +52,10 @@ export interface PermitRecord {
   status: PermitStatus;
   issuedBy: string; // user email or name
   issuedByUid: string;
+  issuerSignature?: string; // base64 PNG data URL
+  issuerPosition?: string;
+  issuerDepartment?: string;
+  issuerEmployeeNumber?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -58,6 +63,7 @@ export interface PermitRecord {
 export type NewPermitInput = Omit<
   PermitRecord,
   "id" | "barcode" | "permitNumber" | "status" | "issuedBy" | "issuedByUid" | "createdAt" | "updatedAt"
+  | "issuerSignature" | "issuerPosition" | "issuerDepartment" | "issuerEmployeeNumber"
 >;
 
 const COLLECTION = "permits";
@@ -69,7 +75,7 @@ function rand(n: number) {
 }
 
 export function generateBarcode(): string {
-  return "ZA" + rand(9);
+  return generateEan13();
 }
 
 export function generatePermitNumber(type: PermitType): string {
@@ -161,7 +167,7 @@ function omitUndefined<T extends Record<string, unknown>>(obj: T): {
 
 export async function createPermit(
   input: NewPermitInput,
-  issuer: { uid: string; name: string },
+  issuer: { uid: string; name: string; signature?: string; position?: string; department?: string; employeeNumber?: string },
 ): Promise<PermitRecord> {
   const barcode = generateBarcode();
   const permitNumber = generatePermitNumber(input.permitType);
@@ -174,6 +180,10 @@ export async function createPermit(
     status: "valid" as PermitStatus,
     issuedBy: issuer.name,
     issuedByUid: issuer.uid,
+    issuerSignature: issuer.signature,
+    issuerPosition: issuer.position,
+    issuerDepartment: issuer.department,
+    issuerEmployeeNumber: issuer.employeeNumber,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });

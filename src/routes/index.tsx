@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "SPVMS · Smart Permit Verification & Monitoring" },
+      { title: "DigiPermit · DigiPermit Verification System" },
       { name: "description", content: "Secure, real-time validation of visas, residence and work permits for the Department of Home Affairs, South Africa." },
     ],
   }),
@@ -48,7 +48,7 @@ function LandingPage() {
               <Shield className="size-4" />
             </div>
             <div>
-              <span className="font-semibold text-sm tracking-tight">SPVMS</span>
+              <span className="font-semibold text-sm tracking-tight">DigiPermit</span>
               <span className="text-[11px] text-muted-foreground ml-2 hidden sm:inline">Department of Home Affairs · RSA</span>
             </div>
           </div>
@@ -71,7 +71,7 @@ function LandingPage() {
               National permit verification system
             </div>
             <h1 className="text-4xl lg:text-5xl font-semibold text-primary-foreground leading-tight tracking-tight">
-              Smart Permit Verification &amp; Monitoring
+              DigiPermit Verification System
             </h1>
             <p className="mt-5 text-lg text-primary-foreground/80 max-w-lg leading-relaxed">
               Secure, real-time validation of visas, residence and work permits — built for Home Affairs officials and field enforcement officers across South Africa.
@@ -146,11 +146,11 @@ function LandingPage() {
           <ShieldCheck className="size-10 mx-auto text-primary mb-4" />
           <h2 className="text-2xl font-semibold tracking-tight">Authorised personnel only</h2>
           <p className="mt-2 text-muted-foreground max-w-md mx-auto">
-            Access to the Smart Permit Verification &amp; Monitoring System is restricted to registered Home Affairs administrators and enforcement officers.
+            Access to the DigiPermit Verification System is restricted to registered Home Affairs administrators and enforcement officers.
           </p>
           <div className="mt-6 flex justify-center gap-3">
             <Button asChild size="lg">
-              <Link to="/auth">Sign in to SPVMS</Link>
+              <Link to="/auth">Sign in to DigiPermit</Link>
             </Button>
           </div>
         </div>
@@ -161,7 +161,7 @@ function LandingPage() {
         <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <Shield className="size-4" />
-            <span className="font-medium text-foreground">SPVMS</span>
+            <span className="font-medium text-foreground">DigiPermit</span>
             <span>· Department of Home Affairs · Republic of South Africa</span>
           </div>
           <span>Prototype build · Authorised personnel only</span>

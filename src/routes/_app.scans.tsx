@@ -9,7 +9,7 @@ import { subscribeToScans, type ScanEvent, type VerificationResult } from "@/lib
 import { useCurrentUser } from "@/lib/auth-store";
 
 export const Route = createFileRoute("/_app/scans")({
-  head: () => ({ meta: [{ title: "Scan Log · SPVMS" }] }),
+  head: () => ({ meta: [{ title: "Scan Log · DigiPermit" }] }),
   component: ScansPage,
 });
 

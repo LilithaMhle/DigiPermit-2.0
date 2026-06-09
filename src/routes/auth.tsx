@@ -11,7 +11,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Sign in · SPVMS" },
+      { title: "Sign in · DigiPermit" },
       { name: "description", content: "Authorised access for Home Affairs administrators and enforcement officers." },
     ],
   }),
@@ -50,14 +50,14 @@ function AuthPage() {
               <Shield className="size-6" />
             </div>
             <div>
-              <div className="font-semibold tracking-tight">SPVMS</div>
+              <div className="font-semibold tracking-tight">DigiPermit</div>
               <div className="text-xs opacity-80">Department of Home Affairs · RSA</div>
             </div>
           </div>
         </div>
         <div className="relative space-y-6">
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">
-            Smart Permit Verification &amp; Monitoring System
+            DigiPermit Verification System
           </h1>
           <p className="text-base opacity-85 max-w-md">
             Secure, real-time validation of visas, residence and work permits — built for Home Affairs officials and field enforcement officers.
@@ -79,7 +79,7 @@ function AuthPage() {
         <div className="w-full max-w-md space-y-6">
           <div className="lg:hidden flex items-center gap-2 justify-center">
             <Shield className="size-5 text-primary" />
-            <span className="font-semibold">SPVMS</span>
+            <span className="font-semibold">DigiPermit</span>
           </div>
 
           <div className="inline-flex p-1 rounded-lg bg-secondary w-full">

@@ -44,9 +44,12 @@ import {
 import { PERMIT_TYPE_LABELS, type PermitRecord } from "@/lib/permits-firestore";
 import { useCurrentUser } from "@/lib/auth-store";
 import { toast } from "sonner";
+import { useServerFn } from "@tanstack/react-start";
+import { explainVerification, type VerifyInsight } from "@/lib/ai-insights.functions";
+import { AiInsightCard } from "@/components/ai/AiInsightCard";
 
 export const Route = createFileRoute("/_app/verify")({
-  head: () => ({ meta: [{ title: "Verify Permit · SPVMS" }] }),
+  head: () => ({ meta: [{ title: "Verify Permit · DigiPermit" }] }),
   component: VerifyPage,
 });
 
@@ -79,6 +82,10 @@ function VerifyPage() {
   const [scanCount, setScanCount] = useState(0);
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
   const [scannerReady, setScannerReady] = useState(false);
+  const [aiInsight, setAiInsight] = useState<VerifyInsight | null>(null);
+  const [aiInsightLoading, setAiInsightLoading] = useState(false);
+  const [aiInsightError, setAiInsightError] = useState<string | null>(null);
+  const runExplain = useServerFn(explainVerification);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -271,6 +278,39 @@ function VerifyPage() {
       setLastScanTime(new Date());
       void qc.invalidateQueries({ queryKey: ["scans"] });
       void qc.invalidateQueries({ queryKey: ["alerts"] });
+
+      // AI assist for this scan
+      setAiInsight(null);
+      setAiInsightError(null);
+      setAiInsightLoading(true);
+      const recentHistory = [entry, ...results]
+        .filter((x) => x.barcode === entry.barcode)
+        .slice(0, 20)
+        .map((x) => ({
+          checkpoint: x.location,
+          result: x.result,
+          ageMinutes: Math.round((Date.now() - x.at.getTime()) / 60000),
+        }));
+      runExplain({
+        data: {
+          barcode: entry.barcode,
+          result: entry.result,
+          checkpoint: entry.location,
+          permit: entry.permit
+            ? {
+                permitType: entry.permit.permitType,
+                nationality: entry.permit.nationality,
+                issueDate: entry.permit.issueDate,
+                expiryDate: entry.permit.expiryDate,
+                status: entry.permit.status,
+              }
+            : null,
+          recentHistory,
+        },
+      })
+        .then((res) => setAiInsight(res))
+        .catch((e) => setAiInsightError((e as Error).message ?? "AI assist failed."))
+        .finally(() => setAiInsightLoading(false));
     },
     onError: (err) => toast.error((err as Error).message ?? "Verification failed."),
   });
@@ -447,7 +487,7 @@ function VerifyPage() {
                   <Input
                     value={barcode}
                     onChange={(e) => setBarcode(e.target.value)}
-                    placeholder="e.g. ZA482910337"
+                    placeholder="e.g. 6008454002605"
                     className="field-input font-mono"
                     onKeyDown={(e) => e.key === "Enter" && triggerVerify()}
                     disabled={scanning}
@@ -489,6 +529,27 @@ function VerifyPage() {
 
       {/* ── Full result card (below grid) ── */}
       {latestResult && <ResultCard result={latestResult} />}
+
+      {latestResult && (aiInsightLoading || aiInsight || aiInsightError) && (
+        <AiInsightCard
+          title="AI Officer Assist"
+          loading={aiInsightLoading}
+          error={aiInsightError}
+          risk={aiInsight?.riskLevel}
+          headline={
+            aiInsight
+              ? aiInsight.recommendedAction === "allow"
+                ? "Allow holder to proceed"
+                : aiInsight.recommendedAction === "secondary_inspection"
+                  ? "Refer to secondary inspection"
+                  : "Detain and report to DHA"
+              : undefined
+          }
+          summary={aiInsight?.reasoning}
+          sections={aiInsight ? [{ label: "Notes", items: aiInsight.notes }] : []}
+          analyzedAt={aiInsight ? new Date() : null}
+        />
+      )}
 
       <style>{STYLES}</style>
     </div>
