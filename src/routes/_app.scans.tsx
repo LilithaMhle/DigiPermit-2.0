@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -7,6 +8,8 @@ import { Search, MapPin, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { subscribeToScans, type ScanEvent, type VerificationResult } from "@/lib/scans-firestore";
 import { useCurrentUser } from "@/lib/auth-store";
+import { AiInsightCard } from "@/components/ai/AiInsightCard";
+import { analyzeScans, type ScanInsight } from "@/lib/ai-insights.functions";
 
 export const Route = createFileRoute("/_app/scans")({
   head: () => ({ meta: [{ title: "Scan Log · DigiPermit" }] }),
@@ -20,6 +23,11 @@ function ScansPage() {
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
+  const [scanInsight, setScanInsight] = useState<ScanInsight | null>(null);
+  const [scanInsightLoading, setScanInsightLoading] = useState(false);
+  const [scanInsightError, setScanInsightError] = useState<string | null>(null);
+  const [scanInsightAt, setScanInsightAt] = useState<Date | null>(null);
+  const runAnalyzeScans = useServerFn(analyzeScans);
 
   const user = useCurrentUser();
 
@@ -61,6 +69,44 @@ function ScansPage() {
     return c;
   }, [scans]);
 
+  const scanSignature = useMemo(
+    () => (scans ?? []).slice(0, 60).map((s) => `${s.id}:${s.result}:${s.locationLabel}`).join("|"),
+    [scans],
+  );
+
+  const runScanAnalysis = async () => {
+    const recent = (scans ?? []).slice(0, 60);
+    setScanInsightLoading(true);
+    setScanInsightError(null);
+    try {
+      const result = await runAnalyzeScans({
+        data: {
+          scans: recent.map((s) => ({
+            barcode: s.barcode,
+            result: s.result,
+            locationLabel: s.locationLabel,
+            officerName: s.officerName,
+            ageMinutes: s.timestamp
+              ? Math.round((Date.now() - s.timestamp.toDate().getTime()) / 60000)
+              : null,
+          })),
+        },
+      });
+      setScanInsight(result);
+      setScanInsightAt(new Date());
+    } catch (error) {
+      setScanInsightError((error as Error).message ?? "DigiPermit AI scan analysis failed.");
+    } finally {
+      setScanInsightLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (scans === null) return;
+    void runScanAnalysis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanSignature, scans === null]);
+
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
       <div className="flex items-end justify-between flex-wrap gap-3">
@@ -76,6 +122,27 @@ function ScansPage() {
           Live
         </div>
       </div>
+
+      <AiInsightCard
+        title="DigiPermit AI Scan Analyst"
+        loading={scanInsightLoading}
+        error={scanInsightError}
+        risk={scanInsight?.riskLevel}
+        headline={scanInsight?.headline}
+        summary={scanInsight?.summary}
+        sections={
+          scanInsight
+            ? [
+                { label: "Hotspots", items: scanInsight.hotspots },
+                { label: "Watch these barcodes", items: scanInsight.watchBarcodes },
+                { label: "Recommended actions", items: scanInsight.recommendations },
+              ]
+            : []
+        }
+        analyzedAt={scanInsightAt}
+        onRefresh={() => void runScanAnalysis()}
+        emptyMessage="DigiPermit AI is waiting for scan activity."
+      />
 
       <Card className="p-4 flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-60">

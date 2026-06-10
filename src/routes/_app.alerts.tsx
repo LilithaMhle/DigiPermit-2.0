@@ -41,7 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { RefreshCw } from "lucide-react";
 
 export const Route = createFileRoute("/_app/alerts")({
-  head: () => ({ meta: [{ title: "AI Intelligence · DigiPermit" }] }),
+  head: () => ({ meta: [{ title: "DigiPermit AI Intelligence · DigiPermit" }] }),
   component: AlertsPage,
 });
 
@@ -303,12 +303,12 @@ function AlertsPage() {
             </div>
             <div>
               <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                AI Intelligence Hub
+                DigiPermit AI Intelligence Hub
               </p>
-              <h1 className="text-3xl font-semibold tracking-tight">Alerts & AI Analysts</h1>
+              <h1 className="text-3xl font-semibold tracking-tight">DigiPermit AI Analysts</h1>
               <p className="text-muted-foreground text-sm mt-1 max-w-2xl">
-                Consolidated fraud detection, scan operations, and shift briefings — powered
-                by live data and Lovable AI.
+                Internal fraud detection, scan operations, and shift briefings — powered
+                by live system data without external AI quota limits.
               </p>
             </div>
           </div>
@@ -332,7 +332,7 @@ function AlertsPage() {
             <div className="flex items-center gap-2">
               <Sparkles className="size-4 text-primary" />
               <h2 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-                AI Analysts
+                DigiPermit AI Analysts
               </h2>
             </div>
             <TabsList>
@@ -354,7 +354,7 @@ function AlertsPage() {
 
           <TabsContent value="briefing">
             <AiInsightCard
-              title="AI Shift Briefing"
+              title="DigiPermit AI Shift Briefing"
               loading={briefLoading}
               error={briefError}
               risk={brief?.riskLevel}
@@ -376,7 +376,7 @@ function AlertsPage() {
 
           <TabsContent value="scans">
             <AiInsightCard
-              title="AI Scan Analyst"
+              title="DigiPermit AI Scan Analyst"
               loading={scanLoading}
               error={scanError}
               risk={scanInsight?.riskLevel}
@@ -458,7 +458,7 @@ function AlertsPage() {
                     {ai && (
                       <div className="mt-3 rounded-md border border-accent/30 bg-accent/5 p-3 text-sm space-y-1">
                         <div className="flex items-center gap-1.5 text-xs font-medium text-accent-foreground/80">
-                          <Sparkles className="size-3" /> AI assessment
+                          <Sparkles className="size-3" /> DigiPermit AI assessment
                         </div>
                         <p className="text-foreground/90">{ai.reasoning}</p>
                         <p className="text-muted-foreground">
@@ -585,7 +585,7 @@ function AiAnalystPanel({
           </div>
           <div>
             <div className="font-semibold flex items-center gap-2">
-              AI Fraud Analyst
+              DigiPermit AI Fraud Analyst
               {result && <RiskBadge risk={result.overallRisk} />}
             </div>
             <div className="text-sm text-muted-foreground">
@@ -596,7 +596,7 @@ function AiAnalystPanel({
                     analyzedAt ? ` · ${formatDistanceToNow(analyzedAt, { addSuffix: true })}` : ""
                   }`
                 : openCount === 0
-                  ? "No open alerts. AI will analyze automatically when new alerts appear."
+                  ? "No open alerts. DigiPermit AI will analyze automatically when new alerts appear."
                   : "Waiting for analysis…"}
             </div>
           </div>

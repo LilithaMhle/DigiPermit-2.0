@@ -25,7 +25,7 @@ const nav = [
   { to: "/issue", label: "Issue Permit", icon: FilePlus2, roles: ["admin"] },
   { to: "/renewals", label: "Renewal Requests", icon: ListChecks, roles: ["admin"] },
   { to: "/scans", label: "Scan Log", icon: ListChecks, roles: ["admin", "officer"] },
-  { to: "/alerts", label: "AI Alerts", icon: AlertTriangle, roles: ["admin", "officer"] },
+  { to: "/alerts", label: "DigiPermit AI", icon: AlertTriangle, roles: ["admin", "officer"] },
   { to: "/profile", label: "Profile", icon: UserCircle, roles: ["admin", "officer", "permit_holder"] },
 ];
 

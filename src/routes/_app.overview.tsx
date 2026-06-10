@@ -20,6 +20,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { useEffect, useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDistanceToNow, format, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import { listExpiringPermits, listPermits } from "@/lib/permits-firestore";
@@ -27,6 +28,8 @@ import { subscribeToScans, type ScanEvent } from "@/lib/scans-firestore";
 import { subscribeToAlerts, type AIAlert } from "@/lib/alerts-firestore";
 import { listRenewalRequests } from "@/lib/renewal-firestore";
 import { toast } from "sonner";
+import { AiInsightCard } from "@/components/ai/AiInsightCard";
+import { briefOverview, type OverviewBrief } from "@/lib/ai-insights.functions";
 
 export const Route = createFileRoute("/_app/overview")({
   head: () => ({
@@ -47,6 +50,11 @@ function Overview() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [brief, setBrief] = useState<OverviewBrief | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefError, setBriefError] = useState<string | null>(null);
+  const [briefAt, setBriefAt] = useState<Date | null>(null);
+  const runBrief = useServerFn(briefOverview);
 
   // Filter state
   const today = new Date().toISOString().slice(0, 10);
@@ -166,6 +174,43 @@ function Overview() {
     return Object.values(map).sort((a, b) => b.invalid - a.invalid).slice(0, 5);
   }, [filteredScans]);
 
+  const briefSignature = `${stats.totalPermits}|${stats.scansToday}|${stats.openAlerts}|${stats.invalidRate}|${expiringCount}|${pendingRenewals}|${hotspots.map((h) => `${h.location}:${h.invalid}:${h.total}`).join(",")}`;
+
+  const runBriefNow = useMemo(
+    () => async () => {
+      setBriefLoading(true);
+      setBriefError(null);
+      try {
+        const result = await runBrief({
+          data: {
+            totalPermits: stats.totalPermits,
+            expiringCount,
+            pendingRenewals,
+            openAlerts: stats.openAlerts,
+            scansToday: stats.scansToday,
+            invalidRateToday: stats.invalidRate,
+            topHotspots: hotspots,
+            recentAlertTypes: alerts.filter((a) => !a.resolved).slice(0, 10).map((a) => a.type),
+          },
+        });
+        setBrief(result);
+        setBriefAt(new Date());
+      } catch (err) {
+        setBriefError((err as Error).message ?? "DigiPermit AI briefing failed.");
+      } finally {
+        setBriefLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [briefSignature],
+  );
+
+  useEffect(() => {
+    if (loading) return;
+    void runBriefNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, briefSignature]);
+
   // Export functions
   const exportToCSV = () => {
     setExporting(true);
@@ -249,6 +294,26 @@ function Overview() {
         <h1 className="text-3xl font-semibold tracking-tight">Operations Overview</h1>
         <p className="text-muted-foreground">Real-time permit verification activity across all checkpoints.</p>
       </div>
+
+      <AiInsightCard
+        title="DigiPermit AI Shift Briefing"
+        loading={briefLoading}
+        error={briefError}
+        risk={brief?.riskLevel}
+        headline={brief?.headline}
+        summary={brief?.summary}
+        sections={
+          brief
+            ? [
+                { label: "Trends", items: brief.trends },
+                { label: "Top actions this shift", items: brief.topActions },
+              ]
+            : []
+        }
+        analyzedAt={briefAt}
+        onRefresh={() => void runBriefNow()}
+        emptyMessage="DigiPermit AI will generate once dashboard data is loaded."
+      />
 
       {/* Date Filter Controls */}
       <Card className="p-5 space-y-4">

@@ -5,6 +5,13 @@
 //     error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { loadEnv } from "vite";
+
+const localEnv = loadEnv(process.env.NODE_ENV === "production" ? "production" : "development", process.cwd(), "");
+
+if (localEnv.GEMINI_API_KEY && !process.env.GEMINI_API_KEY) {
+  process.env.GEMINI_API_KEY = localEnv.GEMINI_API_KEY;
+}
 
 export default defineConfig({
   tanstackStart: {

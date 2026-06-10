@@ -532,7 +532,7 @@ function VerifyPage() {
 
       {latestResult && (aiInsightLoading || aiInsight || aiInsightError) && (
         <AiInsightCard
-          title="AI Officer Assist"
+          title="DigiPermit AI Officer Assist"
           loading={aiInsightLoading}
           error={aiInsightError}
           risk={aiInsight?.riskLevel}

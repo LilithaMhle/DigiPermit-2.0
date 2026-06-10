@@ -26,7 +26,7 @@ export interface AiInsightCardProps {
 }
 
 export function AiInsightCard({
-  title = "AI Insight",
+  title = "DigiPermit AI Insight",
   loading,
   error,
   risk,
@@ -62,7 +62,7 @@ export function AiInsightCard({
               </div>
               <div className="text-xs text-muted-foreground">
                 {loading
-                  ? "Analyzing with Lovable AI…"
+                  ? "DigiPermit AI is analyzing…"
                   : analyzedAt
                     ? `Analyzed ${formatDistanceToNow(analyzedAt, { addSuffix: true })}`
                     : hasContent

@@ -292,7 +292,7 @@ function RenewalsPage() {
               )}
 
               <AiInsightCard
-                title="AI Renewal Recommendation"
+                title="DigiPermit AI Renewal Recommendation"
                 loading={aiReviewLoading}
                 error={aiReviewError}
                 risk={
