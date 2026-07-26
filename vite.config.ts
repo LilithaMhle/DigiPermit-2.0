@@ -14,9 +14,11 @@ if (localEnv.GEMINI_API_KEY && !process.env.GEMINI_API_KEY) {
 }
 
 export default defineConfig({
+  nitro: true,
+
   tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
-    server: { entry: "server" },
+    server: {
+      entry: "server",
+    },
   },
 });
